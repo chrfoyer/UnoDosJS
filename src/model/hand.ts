@@ -246,11 +246,35 @@ export class Hand {
       throw new Error("Invalid accused player index");
     }
 
+    const nextPlayerIndex =
+      (this.currentPlayerIndex + this.direction + this.players.length) %
+      this.players.length;
+
+    if (this.unoSaid.has(accused)) {
+      return false;
+    }
+
+    if (
+      this.lastPlayedCard &&
+      this.playerHands[nextPlayerIndex].length <
+        this.playerHands[nextPlayerIndex].length
+    ) {
+      return false;
+    }
+
+    if (
+      this.playerHands[nextPlayerIndex].length >
+      this.playerHands[nextPlayerIndex].length
+    ) {
+      return false;
+    }
+
     if (this.playerHands[accused].length === 1 && !this.unoSaid.has(accused)) {
       const currentPlayer = this.currentPlayerIndex;
       this.currentPlayerIndex = accused;
       this.drawCards(4);
       this.currentPlayerIndex = currentPlayer;
+      this.unoSaid.add(accused);
       return true;
     }
     return false;

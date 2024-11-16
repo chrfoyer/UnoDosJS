@@ -18,8 +18,11 @@
     "@babel/preset-env": "^7.24.6",
     "@babel/preset-typescript": "^7.24.6",
     "babel-jest": "^29.7.0",
-    "jest": "^29.7.0",
     "ts-loader": "^9.5.1",
     "typescript": "^5.4.5"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.13",
+    "jest": "^29.7.0"
   }
 }
