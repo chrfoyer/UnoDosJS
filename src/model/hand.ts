@@ -21,7 +21,9 @@ export class Hand {
   private _winner: number | undefined;
   private onEndCallbacks: ((event: { winner: number }) => void)[];
   private unoSaid: Set<number>;
+  private lastActionByOthers: Set<number>;
   private lastPlayedCard: Card | undefined;
+  private _shuffler: Shuffler<Card>;
 
   constructor(props: HandProps) {
     if (props.players.length < 2 || props.players.length > 10) {
@@ -34,12 +36,14 @@ export class Hand {
     deck.shuffle(shuffler);
     this._discardPile = new Deck();
     this._drawPile = new Deck();
+    this._shuffler = shuffler;
     this.playerHands = [];
     this.direction = 1;
     this._hasEnded = false;
     this._winner = undefined;
     this.onEndCallbacks = props.onEnd ? [props.onEnd] : [];
     this.unoSaid = new Set();
+    this.lastActionByOthers = new Set();
     this.currentPlayerIndex = (this._dealer + 1) % this.players.length;
     this.lastPlayedCard = undefined;
 
@@ -65,7 +69,7 @@ export class Hand {
       if (firstCard) {
         if (firstCard.type === "WILD" || firstCard.type === "WILD DRAW") {
           this._drawPile.addToBottom(firstCard);
-          this._drawPile.shuffle();
+          this._drawPile.shuffle(this._shuffler);  // Use the stored shuffler
         } else {
           this._discardPile = new Deck([firstCard]);
           this.lastPlayedCard = firstCard;
@@ -90,20 +94,23 @@ export class Hand {
 
   draw(): void {
     if (this._hasEnded) throw new Error("The hand has ended");
+
     const card = this._drawPile.deal();
     if (card) {
       this.playerHands[this.currentPlayerIndex].push(card);
+
+      // After drawing, if draw pile is empty, reshuffle
+      if (this._drawPile.size === 0) {
+        this.reshuffleDeck();
+      }
+
+      // Mark that this player took an action for all other players
+      this.lastActionByOthers = new Set(
+        [...Array(this.players.length).keys()].filter(i => i !== this.currentPlayerIndex)
+      );
+
       if (!this.canPlayAny()) {
         this.nextTurn();
-      }
-    } else {
-      this.reshuffleDeck();
-      const newCard = this._drawPile.deal();
-      if (newCard) {
-        this.playerHands[this.currentPlayerIndex].push(newCard);
-        if (!this.canPlayAny()) {
-          this.nextTurn();
-        }
       }
     }
   }
@@ -121,11 +128,46 @@ export class Hand {
       throw new Error("Must choose a color for wild cards");
     }
 
+    if ((card.color && chosenColor)) {
+      throw new Error("You can't choose a color for a numbered card");
+    }
+
+
+    // // Handle cards that force next player to draw before removing the played card
+    // if (card.type === "DRAW" || card.type === "WILD DRAW") {
+    //   const nextPlayer = (this.currentPlayerIndex + this.direction + this.players.length) % this.players.length;
+    //   const cardsToDraw = card.type === "DRAW" ? 2 : 4;
+
+    //   // Draw the cards before removing the played card
+    //   for (let i = 0; i < cardsToDraw; i++) {
+    //     const drawnCard = this._drawPile.deal();
+    //     if (drawnCard) {
+    //       this.playerHands[nextPlayer].push(drawnCard);
+    //     } else {
+    //       this.reshuffleDeck();
+    //       const newCard = this._drawPile.deal();
+    //       if (newCard) this.playerHands[nextPlayer].push(newCard);
+    //     }
+    //   }
+    // }
+
     hand.splice(cardIndex, 1);
     this._discardPile.addToBottom(card);
     this.lastPlayedCard = card;
 
+    // Clear UNO declaration if they didn't get down to one card
+    if (hand.length !== 1) {
+      this.unoSaid.delete(this.currentPlayerIndex);
+    }
+
+    // // Apply effects first
+    // this.applyCardEffect(card, chosenColor);
+
+    // Then check for game end
     if (hand.length === 0) {
+      if (card.type === "DRAW" || card.type === "WILD DRAW") {
+        this.applyCardEffect(card, chosenColor);
+      }
       this._hasEnded = true;
       this._winner = this.currentPlayerIndex;
       this.onEndCallbacks.forEach((callback) =>
@@ -179,7 +221,10 @@ export class Hand {
         break;
       case "DRAW":
         this.nextTurn();
-        this.drawCards(2);
+        // Only draw if we haven't already drawn (in the play method)
+        if (!this._hasEnded) {
+          this.drawCards(2);
+        }
         this.nextTurn();
         break;
       case "WILD":
@@ -188,7 +233,10 @@ export class Hand {
       case "WILD DRAW":
         if (chosenColor) card.color = chosenColor;
         this.nextTurn();
-        this.drawCards(4);
+        // Only draw if we haven't already drawn (in the play method)
+        if (!this._hasEnded) {
+          this.drawCards(4);
+        }
         this.nextTurn();
         break;
     }
@@ -202,10 +250,11 @@ export class Hand {
       const card = this._drawPile.deal();
       if (card) {
         this.playerHands[this.currentPlayerIndex].push(card);
-      } else {
-        this.reshuffleDeck();
-        const newCard = this._drawPile.deal();
-        if (newCard) this.playerHands[this.currentPlayerIndex].push(newCard);
+
+        // After drawing, if draw pile is empty, reshuffle
+        if (this._drawPile.size === 0) {
+          this.reshuffleDeck();
+        }
       }
     }
   }
@@ -217,13 +266,27 @@ export class Hand {
   }
 
   private reshuffleDeck(): void {
+    // Save the top card
     const topCard = this._discardPile.deal();
+
+    // Move all other cards to draw pile
     while (this._discardPile.size > 0) {
       const card = this._discardPile.deal();
-      if (card) this._drawPile.addToBottom(card);
+      if (card) {
+        this._drawPile.addToBottom(card);
+      }
     }
-    this._drawPile.shuffle();
-    if (topCard) this._discardPile.addToBottom(topCard);
+
+    // Only shuffle and use mock if we have cards to shuffle
+    if (this._drawPile.size > 0) {
+      this._drawPile.shuffle(this._shuffler);
+    }
+
+    // Restore the top card to discard pile
+    if (topCard) {
+      this._discardPile = new Deck([]);
+      this._discardPile.setTopCard(topCard);
+    }
   }
 
   sayUno(playerIndex: number): void {
@@ -231,7 +294,15 @@ export class Hand {
     if (playerIndex < 0 || playerIndex >= this.players.length) {
       throw new Error("Invalid player index");
     }
-    this.unoSaid.add(playerIndex);
+
+    // Only valid if:
+    // - Player has one card, OR
+    // - It's their turn and they have two cards
+    if (this.playerHands[playerIndex].length === 1 ||
+      (this.currentPlayerIndex === playerIndex &&
+        this.playerHands[playerIndex].length === 2)) {
+      this.unoSaid.add(playerIndex);
+    }
   }
 
   catchUnoFailure({
@@ -247,25 +318,9 @@ export class Hand {
     }
 
     const nextPlayerIndex =
-      (this.currentPlayerIndex + this.direction + this.players.length) %
-      this.players.length;
+      (accused + this.direction + this.players.length) % this.players.length;
 
-    if (this.unoSaid.has(accused)) {
-      return false;
-    }
-
-    if (
-      this.lastPlayedCard &&
-      this.playerHands[nextPlayerIndex].length <
-        this.playerHands[nextPlayerIndex].length
-    ) {
-      return false;
-    }
-
-    if (
-      this.playerHands[nextPlayerIndex].length >
-      this.playerHands[nextPlayerIndex].length
-    ) {
+    if (this.currentPlayerIndex !== nextPlayerIndex) {
       return false;
     }
 
@@ -277,6 +332,7 @@ export class Hand {
       this.unoSaid.add(accused);
       return true;
     }
+
     return false;
   }
 

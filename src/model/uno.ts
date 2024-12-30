@@ -33,7 +33,7 @@ class UnoGame implements Game {
     if (this.players.length < 2) {
       throw new Error("At least 2 players are required");
     }
-    this._targetScore = props.targetScore || 500;
+    this._targetScore = props.targetScore ?? 500;
     if (this._targetScore <= 0) {
       throw new Error("Target score must be greater than 0");
     }

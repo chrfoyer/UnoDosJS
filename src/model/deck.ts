@@ -70,6 +70,10 @@ export class Deck {
   top(): Card | undefined {
     return this.cards[this.cards.length - 1];
   }
+
+  setTopCard(card: Card): void {
+    this.cards = [card, ...this.cards];
+  }
 }
 
 export function createInitialDeck(): Deck {
