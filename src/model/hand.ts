@@ -1,6 +1,16 @@
 import { Deck, Card, Color } from "./deck";
 import { Shuffler, standardShuffler } from "../utils/random_utils";
 
+/**
+ * Properties for initializing a Hand.
+ * 
+ * @interface HandProps
+ * @property {string[]} players - An array of player names.
+ * @property {number} dealer - The index of the dealer in the players array.
+ * @property {Shuffler<Card>} [shuffler] - Optional shuffler function to shuffle the deck. Defaults to `standardShuffler`.
+ * @property {number} [cardsPerPlayer] - Optional number of cards to deal to each player at the start. Defaults to 7.
+ * @property {(event: { winner: number }) => void} [onEnd] - Optional callback function to be called when the hand ends.
+ */
 interface HandProps {
   players: string[];
   dealer: number;
@@ -9,6 +19,25 @@ interface HandProps {
   onEnd?: (event: { winner: number }) => void;
 }
 
+/**
+ * Class representing a hand of the game.
+ * 
+ * @class Hand
+ * @property {string[]} players - An array of player names.
+ * @property {number} _dealer - The index of the dealer in the players array.
+ * @property {Deck} _discardPile - The discard pile.
+ * @property {Deck} _drawPile - The draw pile.
+ * @property {Card[][]} playerHands - An array of arrays representing each player's hand.
+ * @property {number} currentPlayerIndex - The index of the current player.
+ * @property {1 | -1} direction - The direction of play (1 for clockwise, -1 for counterclockwise).
+ * @property {boolean} _hasEnded - Whether the hand has ended.
+ * @property {number | undefined} _winner - The index of the winning player, or `undefined` if the hand has not ended.
+ * @property {((event: { winner: number }) => void)[]} onEndCallbacks - An array of callback functions to be called when the hand ends.
+ * @property {Set<number>} unoSaid - A set of player indices who have declared UNO.
+ * @property {Set<number>} lastActionByOthers - A set of player indices who took the last action.
+ * @property {Card | undefined} lastPlayedCard - The last played card, or `undefined` if no card has been played.
+ * @property {Shuffler<Card>} _shuffler - The shuffler function used to shuffle the deck.
+ */
 export class Hand {
   private players: string[];
   private _dealer: number;
@@ -25,6 +54,11 @@ export class Hand {
   private lastPlayedCard: Card | undefined;
   private _shuffler: Shuffler<Card>;
 
+  /**
+   * Creates an instance of Hand.
+   * @param {HandProps} props - The properties to initialize the hand with.
+   * @throws {Error} If the number of players is less than 2 or more than 10.
+   */
   constructor(props: HandProps) {
     if (props.players.length < 2 || props.players.length > 10) {
       throw new Error("Invalid number of players");
@@ -52,6 +86,11 @@ export class Hand {
     this.startGame();
   }
 
+  /**
+   * Deals the initial cards to each player.
+   * @param deck The deck to deal cards from.
+   * @param cardsPerPlayer The number of cards to deal to each player.
+   */
   private dealInitialCards(deck: Deck, cardsPerPlayer: number): void {
     for (let i = 0; i < this.players.length; i++) {
       this.playerHands[i] = [];
@@ -62,6 +101,9 @@ export class Hand {
     }
   }
 
+  /**
+   * Starts the game by dealing the first card and setting up the initial state.
+   */
   private startGame(): void {
     let firstCard: Card | undefined;
     do {
@@ -92,6 +134,9 @@ export class Hand {
     }
   }
 
+  /**
+   * Draws a card for the current player.
+   */
   draw(): void {
     if (this._hasEnded) throw new Error("The hand has ended");
 
@@ -115,6 +160,12 @@ export class Hand {
     }
   }
 
+  /**
+   * Plays a card from the current player's hand.
+   * @param cardIndex The index of the card to play.
+   * @param chosenColor The chosen color for wild cards.
+   * @returns The played card.
+   */
   play(cardIndex: number, chosenColor?: Color): Card {
     if (this._hasEnded) throw new Error("The hand has ended");
     const hand = this.playerHands[this.currentPlayerIndex];
@@ -132,25 +183,6 @@ export class Hand {
       throw new Error("You can't choose a color for a numbered card");
     }
 
-
-    // // Handle cards that force next player to draw before removing the played card
-    // if (card.type === "DRAW" || card.type === "WILD DRAW") {
-    //   const nextPlayer = (this.currentPlayerIndex + this.direction + this.players.length) % this.players.length;
-    //   const cardsToDraw = card.type === "DRAW" ? 2 : 4;
-
-    //   // Draw the cards before removing the played card
-    //   for (let i = 0; i < cardsToDraw; i++) {
-    //     const drawnCard = this._drawPile.deal();
-    //     if (drawnCard) {
-    //       this.playerHands[nextPlayer].push(drawnCard);
-    //     } else {
-    //       this.reshuffleDeck();
-    //       const newCard = this._drawPile.deal();
-    //       if (newCard) this.playerHands[nextPlayer].push(newCard);
-    //     }
-    //   }
-    // }
-
     hand.splice(cardIndex, 1);
     this._discardPile.addToBottom(card);
     this.lastPlayedCard = card;
@@ -159,9 +191,6 @@ export class Hand {
     if (hand.length !== 1) {
       this.unoSaid.delete(this.currentPlayerIndex);
     }
-
-    // // Apply effects first
-    // this.applyCardEffect(card, chosenColor);
 
     // Then check for game end
     if (hand.length === 0) {
@@ -180,6 +209,11 @@ export class Hand {
     return card;
   }
 
+  /**
+   * Checks if a card is a valid play.
+   * @param card The card to check.
+   * @returns `true` if the card is a valid play, `false` otherwise.
+   */
   isValidPlay(card: Card): boolean {
     if (!this.lastPlayedCard) return true;
 
@@ -208,6 +242,11 @@ export class Hand {
     );
   }
 
+  /**
+   * Applies the effect of a played card.
+   * @param card The card to apply the effect of.
+   * @param chosenColor The chosen color for wild cards.
+   */
   private applyCardEffect(card: Card, chosenColor?: Color): void {
     switch (card.type) {
       case "SKIP":
@@ -245,6 +284,10 @@ export class Hand {
     }
   }
 
+  /**
+   * Draws a specified number of cards for the current player.
+   * @param count The number of cards to draw.
+   */
   private drawCards(count: number): void {
     for (let i = 0; i < count; i++) {
       const card = this._drawPile.deal();
@@ -259,12 +302,18 @@ export class Hand {
     }
   }
 
+  /**
+   * Advances to the next player's turn.
+   */
   private nextTurn(): void {
     this.currentPlayerIndex =
       (this.currentPlayerIndex + this.direction + this.players.length) %
       this.players.length;
   }
 
+  /**
+   * Reshuffles the deck by moving cards from the discard pile to the draw pile.
+   */
   private reshuffleDeck(): void {
     // Save the top card
     const topCard = this._discardPile.deal();
@@ -289,6 +338,10 @@ export class Hand {
     }
   }
 
+  /**
+   * Declares UNO for a player.
+   * @param playerIndex The index of the player declaring UNO.
+   */
   sayUno(playerIndex: number): void {
     if (this._hasEnded) throw new Error("The hand has ended");
     if (playerIndex < 0 || playerIndex >= this.players.length) {
@@ -305,6 +358,12 @@ export class Hand {
     }
   }
 
+  /**
+   * Catches a player who failed to declare UNO.
+   * @param accuser The index of the player accusing.
+   * @param accused The index of the player being accused.
+   * @returns `true` if the accusation is valid, `false` otherwise.
+   */
   catchUnoFailure({
     accuser,
     accused,
@@ -336,19 +395,35 @@ export class Hand {
     return false;
   }
 
+  /**
+   * Checks if the hand has ended.
+   * @returns `true` if the hand has ended, `false` otherwise.
+   */
   hasEnded(): boolean {
     return this._hasEnded;
   }
 
+  /**
+   * Gets the winner of the hand.
+   * @returns The index of the winning player, or `undefined` if the hand has not ended.
+   */
   winner(): number | undefined {
     return this._winner;
   }
 
+  /**
+   * Calculates the score of the hand.
+   * @returns The score of the hand, or `undefined` if the hand has not ended.
+   */
   score(): number | undefined {
     if (!this._hasEnded) return undefined;
     return this.calculateScore();
   }
 
+  /**
+   * Calculates the score based on the remaining cards in each player's hand.
+   * @returns The calculated score.
+   */
   private calculateScore(): number {
     let score = 0;
     for (let i = 0; i < this.players.length; i++) {
@@ -374,6 +449,11 @@ export class Hand {
     return score;
   }
 
+  /**
+   * Gets the hand of a specific player.
+   * @param playerIndex The index of the player.
+   * @returns An array of cards in the player's hand.
+   */
   playerHand(playerIndex: number): Card[] {
     if (playerIndex < 0 || playerIndex >= this.players.length) {
       throw new Error("Invalid player index");
@@ -381,6 +461,11 @@ export class Hand {
     return this.playerHands[playerIndex];
   }
 
+  /**
+   * Checks if the current player can play a specific card.
+   * @param cardIndex The index of the card to check.
+   * @returns `true` if the card can be played, `false` otherwise.
+   */
   canPlay(cardIndex: number): boolean {
     if (this._hasEnded) return false;
     if (
@@ -393,16 +478,29 @@ export class Hand {
     return this.isValidPlay(card);
   }
 
+  /**
+   * Checks if the current player can play any card.
+   * @returns `true` if the current player can play any card, `false` otherwise.
+   */
   canPlayAny(): boolean {
     return this.playerHands[this.currentPlayerIndex].some((card) =>
       this.isValidPlay(card)
     );
   }
 
+  /**
+   * Gets the number of players in the hand.
+   * @returns The number of players.
+   */
   get playerCount(): number {
     return this.players.length;
   }
 
+  /**
+   * Gets the name of a specific player.
+   * @param index The index of the player.
+   * @returns The name of the player.
+   */
   player(index: number): string {
     if (index < 0 || index >= this.players.length) {
       throw new Error("Player index out of bounds");
@@ -410,22 +508,42 @@ export class Hand {
     return this.players[index];
   }
 
+  /**
+   * Gets the index of the dealer.
+   * @returns The index of the dealer.
+   */
   get dealer(): number {
     return this._dealer;
   }
 
+  /**
+   * Gets the index of the player whose turn it is.
+   * @returns The index of the player in turn, or `undefined` if the hand has ended.
+   */
   playerInTurn(): number | undefined {
     return this._hasEnded ? undefined : this.currentPlayerIndex;
   }
 
+  /**
+   * Gets the discard pile.
+   * @returns The discard pile as a `Deck` instance.
+   */
   discardPile(): Deck {
     return this._discardPile;
   }
 
+  /**
+   * Gets the draw pile.
+   * @returns The draw pile as a `Deck` instance.
+   */
   drawPile(): Deck {
     return this._drawPile;
   }
 
+  /**
+   * Registers a callback to be called when the hand ends.
+   * @param callback The callback function to register.
+   */
   onEnd(callback: (event: { winner: number }) => void): void {
     this.onEndCallbacks.push(callback);
   }
